@@ -1,0 +1,92 @@
+import cv2
+from darkflow.net.build import TFNet
+import numpy as np
+import time
+import csv
+import sys
+import math
+option = {
+    'model': 'cfg/yolo.cfg',
+    'load': 'bin/yolo.weights',
+    'threshold': 0.4
+    # 'gpu': 1.0
+}
+posx, posy = -1, -1
+tfnet = TFNet(option)
+capture = cv2.VideoCapture('videoplayback.mp4')
+colors = [tuple(255 * np.random.rand(3)) for i in range(5)]
+
+if not capture.isOpened():
+    print("Could not open video")
+    sys.exit()
+ok, frame = capture.read()
+# def clkeve(event,x,y,flags,param):
+#     global posx, posy
+#     if event == cv2.EVENT_LBUTTONDBLCLK:
+#         posx, posy = x, y
+# cv2.setMouseCallback('frame', clkeve)
+print(np.size(frame, 0),np.size(frame, 1))
+bbox = cv2.selectROI(frame, False)
+
+ari = bbox[2]*bbox[3]
+posx, posy = bbox[0]+bbox[2]/2, bbox[1]+bbox[3]/2
+
+# posx, posy = 300, 20
+centroid = (posx, posy) # Selection point's center
+relpos = (np.size(frame, 0),np.size(frame, 1)/2)
+d1 = math.sqrt(((centroid[0] - relpos[1])*(centroid[0] - relpos[1])) + ((centroid[1] - relpos[0])*(centroid[1] - relpos[0])))
+sp = 0
+loop = 0
+while(capture.isOpened()):
+    stime = time.time()
+    ok, frame = capture.read()
+    # def clkeve(event,x,y,flags,param):
+    #     global posx, posy
+    #     if event == cv2.EVENT_LBUTTONDBLCLK:
+    #         posx, posy = x, y
+    # cv2.setMouseCallback('frame', clkeve)
+    if ok:
+        results = tfnet.return_predict(frame)
+        leng = results.__len__()
+        dis = sys.maxsize
+        index = 100
+        for i in range(leng):
+            bbox = (results[i]['topleft']['x'], results[i]['topleft']['y'], results[i]['bottomright']['x'] - results[i]['topleft']['x'],  results[i]['bottomright']['y'] - results[i]['topleft']['y'])
+            cent = (bbox[0] + bbox[2]/2, bbox[1] + bbox[3]/2)
+            diffx = (abs(cent[0] - centroid[0]), abs(cent[1] - centroid[1]))
+            sq = diffx[0]*diffx[0] + diffx[1]*diffx[1]
+            if(sq < dis):
+                dis = sq
+                index = i
+        centroid = ((results[index]['bottomright']['x'] + results[index]['topleft']['x'])/2, (results[index]['bottomright']['y'] + results[index]['topleft']['y'])/2 )
+        arf = (results[index]['bottomright']['x'] - results[index]['topleft']['x'])*(results[i]['bottomright']['y'] - results[i]['topleft']['y'])
+        tl = (results[index]['topleft']['x'], results[index]['topleft']['y'])
+        br = (results[index]['bottomright']['x'], results[index]['bottomright']['y'])
+        label = results[index]['label']
+        print(results[index])
+        frame = cv2.rectangle(frame, tl, br, (0, 0, 255), 7)
+        frame = cv2.putText(frame, label, br, cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 0), 2)
+        timer = cv2.getTickCount()
+        fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer);
+        cv2.putText(frame, "FPS : " + str(int(fps)), (100,50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (50,170,50), 2);
+        #using area change for speed calculation
+        # speed = (arf - ari)/(time.time() - stime)
+        # ari = arf
+        # #using relative point for speed calculation
+        if(loop%5 == 0):
+            d2 = math.sqrt(((centroid[0] - relpos[1])*(centroid[0] - relpos[1])) + ((centroid[1] - relpos[0])*(centroid[1] - relpos[0])))
+            speed = (d1 - d2)/(time.time() - stime)
+            d1 = d2
+            sp = speed
+        print('loop no.', loop,' speed is', sp)
+        cv2.putText(frame, "Speed : " + str(int(sp)), (60,20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (50,170,50), 2);
+        cv2.imshow('frame', frame)
+        print('FPS {:.1f}'.format(1/(time.time() - stime)))
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    # else:
+    else:
+        capture.release()
+        cv2.destroyAllWindows()
+        break
+    loop = loop + 1
